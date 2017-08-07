@@ -291,8 +291,8 @@ void oscRecvThreadFunc(State& state) {
 
 int main(int, char**)
 {
-  sender = new UdpSender("127.255.255.255", 6040, OUTPUT_BUFFER_SIZE);
-  receiver = new UdpReceiver(6041, OUTPUT_BUFFER_SIZE);
+  sender = new UdpSender("127.0.0.1", 6043, OUTPUT_BUFFER_SIZE);
+  receiver = new UdpReceiver(6042, OUTPUT_BUFFER_SIZE);
   State state;
   printHelp();
   std::thread thread(input, std::ref(state));
