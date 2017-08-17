@@ -54,17 +54,55 @@ public:
 UdpSender* sender;
 UdpReceiver* receiver;
 
+void sendTempo(ableton::Link& link, double quantum, double latency) {
+  auto timeline = link.captureAppTimeline();
+  const auto time = link.clock().micros();
+  const auto tempo = timeline.tempo();
+  const auto beats = timeline.beatAtTime(time, quantum);
+  const auto phase = timeline.phaseAtTime(time, quantum);
+  const auto cycle = beats / quantum;
+  const double cps = (timeline.tempo() / quantum) / 60;
+  const auto t     = std::chrono::microseconds(time).count();
+  static long diff = 0;
+  static double last_cps = -1;
+  char buffer[OUTPUT_BUFFER_SIZE];
+  if (diff == 0) {
+    unsigned long milliseconds_since_epoch = 
+      std::chrono::duration_cast<std::chrono::milliseconds>
+      (std::chrono::system_clock::now().time_since_epoch()).count();
+    // POSIX is millis and Link is micros.. Not sure if that `+500` helps
+    diff = ((milliseconds_since_epoch*1000 + 500) - t);
+  }
+  double timetag_ut = ((double) (t + diff)) / ((double) 1000000);
+  timetag_ut -= latency;
+  int sec = floor(timetag_ut);
+  int usec = floor(1000000 * (timetag_ut - sec));
+  osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
+  std::cout << "\nnew cps: " << cps << " | last cps: " << last_cps << "\n";
+  last_cps = cps;
+  p << osc::BeginMessage( "/tempo" )
+    << sec << usec
+    << (float) cycle << (float) cps << "True" << osc::EndMessage;
+  //s.Send( p.Data(), p.Size() );
+  sender->Send((char *)p.Data(), p.Size());
+}
+
+
 struct State
 {
   std::atomic<bool> running;
   ableton::Link link;
   double quantum;
-
+  double latency = 0.4;
   State()
     : running(true)
       , link(120.)
   {
     link.enable(true);
+    link.setTempoCallback([this](const double bpm) {
+	sendTempo(std::ref(link), quantum, latency);
+    });
+
     quantum=4;
   }
 };
@@ -108,7 +146,8 @@ void printHelp()
 void printState(const std::chrono::microseconds time,
     const ableton::Link::Timeline timeline,
     const std::size_t numPeers,
-    const double quantum)
+    const double quantum,
+    State& state)
 {
   const auto beats = timeline.beatAtTime(time, quantum);
   const auto phase = timeline.phaseAtTime(time, quantum);
@@ -127,8 +166,7 @@ void printState(const std::chrono::microseconds time,
     diff = ((milliseconds_since_epoch*1000 + 500) - t);
   }
   double timetag_ut = ((double) (t + diff)) / ((double) 1000000);
-  // latency hack
-  timetag_ut -= 0.2;
+  timetag_ut -= state.latency;
   int sec = floor(timetag_ut);
   int usec = floor(1000000 * (timetag_ut - sec));
 
@@ -137,20 +175,7 @@ void printState(const std::chrono::microseconds time,
             << "tempo: " << timeline.tempo() << " | " << std::fixed << "beats: " << beats
             << " | sec: " << sec
             << " | usec: " << usec
-            << " | ";
-  if (cps != last_cps) {
-    //UdpBroadcastSocket s(IpEndpointName( "127.255.255.255", 6040));
-    char buffer[OUTPUT_BUFFER_SIZE];
-    osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
-    std::cout << "\nnew cps: " << cps << " | last cps: " << last_cps << "\n";
-    last_cps = cps;
-
-    p << osc::BeginMessage( "/tempo" )
-      << sec << usec
-      << (float) cycle << (float) cps << "True" << osc::EndMessage;
-    //s.Send( p.Data(), p.Size() );
-    sender->Send((char *)p.Data(), p.Size());
-  }
+            << " | lat: " << state.latency;
   for (int i = 0; i < ceil(quantum); ++i)
   {
     if (i < phase)
@@ -163,41 +188,6 @@ void printState(const std::chrono::microseconds time,
     }
   }
   clearLine();
-}
-
-void sendTempo(State& state) {
-  auto timeline = state.link.captureAppTimeline();
-  auto quantum = state.quantum;
-  const auto time = state.link.clock().micros();
-  const auto tempo = timeline.tempo();
-  const auto beats = timeline.beatAtTime(time, quantum);
-  const auto phase = timeline.phaseAtTime(time, quantum);
-  const auto cycle = beats / quantum;
-  const double cps = (timeline.tempo() / quantum) / 60;
-  const auto t     = std::chrono::microseconds(time).count();
-  static long diff = 0;
-  static double last_cps = -1;
-  char buffer[OUTPUT_BUFFER_SIZE];
-  if (diff == 0) {
-    unsigned long milliseconds_since_epoch = 
-      std::chrono::duration_cast<std::chrono::milliseconds>
-      (std::chrono::system_clock::now().time_since_epoch()).count();
-    // POSIX is millis and Link is micros.. Not sure if that `+500` helps
-    diff = ((milliseconds_since_epoch*1000 + 500) - t);
-  }
-  double timetag_ut = ((double) (t + diff)) / ((double) 1000000);
-  // latency hack
-  timetag_ut -= 0.2;
-  int sec = floor(timetag_ut);
-  int usec = floor(1000000 * (timetag_ut - sec));
-  osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
-  std::cout << "\nnew cps: " << cps << " | last cps: " << last_cps << "\n";
-  last_cps = cps;
-  p << osc::BeginMessage( "/tempo" )
-    << sec << usec
-    << (float) cycle << (float) cps << "True" << osc::EndMessage;
-  //s.Send( p.Data(), p.Size() );
-  sender->Send((char *)p.Data(), p.Size());
 }
 
 void input(State& state)
@@ -264,22 +254,32 @@ void oscRecvHandler(char* packet, int packetSize, void* data) {
       timeLine.setTempo((double)(cps*state->quantum*60), updateAt);
       state->link.commitAppTimeline(timeLine);
     }
+    if(std::strcmp(message->AddressPattern(), "/latency") == 0) {
+      auto timeLine = state->link.captureAppTimeline();
+      const auto tempo = timeLine.tempo();
+      // --- //
+      osc::ReceivedMessage::const_iterator arg = message->ArgumentsBegin();
+      state->latency = (arg++)->AsFloat();
+      if(arg != message->ArgumentsEnd())
+        throw osc::ExcessArgumentException();
+      sendTempo(std::ref(state->link), state->quantum, state->latency);
+    }
     if(std::strcmp(message->AddressPattern(), "/nudge") == 0) {
       auto timeLine = state->link.captureAppTimeline();
       const auto tempo = timeLine.tempo();
       // --- //
       osc::ReceivedMessage::const_iterator arg = message->ArgumentsBegin();
-      float nudge = (arg++)->AsFloat();
+      state->latency += (arg++)->AsFloat();
       if(arg != message->ArgumentsEnd())
         throw osc::ExcessArgumentException();
-      // --- //
-      // TODO: SEND TEMPO MESSAGE WITH PHASE OFFSET HERE (not sure exactly how this should be handled)
+      sendTempo(std::ref(state->link), state->quantum, state->latency);
+      std::cout << "\n\n" << "got nudge, latency now set to " << state->latency << "\n\n";
     }
     if(std::strcmp(message->AddressPattern(), "/ping") == 0) {
       auto timeLine = state->link.captureAppTimeline();
       const auto tempo = timeLine.tempo();
       // --- //
-      sendTempo(std::ref(*state));
+      sendTempo(std::ref(state->link), state->quantum, state->latency);
     }
   }
 }
@@ -303,8 +303,7 @@ int main(int, char**)
   {
     const auto time = state.link.clock().micros();
     auto timeline = state.link.captureAppTimeline();
-    printState(
-        time, timeline, state.link.numPeers(), state.quantum);
+    printState(time, timeline, state.link.numPeers(), state.quantum, state);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
 

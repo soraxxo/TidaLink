@@ -27,6 +27,7 @@ class UdpSender {
     char* host;
     struct sockaddr_in serverAddress;
     struct hostent* server;
+    int broadcast = 1;
   public:
     UdpSender(char* host, int port, int bufferSize) {
       this->host = host;
@@ -36,6 +37,7 @@ class UdpSender {
       // create socket
       this->socketFile = socket(AF_INET, SOCK_DGRAM, 0);
       if(this->socketFile < 0) error("ERROR: Could not open socket\n");
+      //setsockopt(this->socketFile, SOL_SOCKET, SO_BROADCAST, &broadcast, sizeof(broadcast));
       // get DNS entry for server
       this->server = gethostbyname(this->host);
       if(this->server == NULL) {
