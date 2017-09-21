@@ -54,11 +54,11 @@ public:
 UdpSender* sender;
 UdpReceiver* receiver;
 
-void sendTempo(ableton::Link& link, double quantum, double latency) {
+void sendTempo(ableton::Link& link, double quantum, double latency, long int beatOffset) {
   auto timeline = link.captureAppTimeline();
   const auto time = link.clock().micros();
   const auto tempo = timeline.tempo();
-  const auto beats = timeline.beatAtTime(time, quantum);
+  const auto beats = (timeline.beatAtTime(time, quantum) - beatOffset);
   const auto phase = timeline.phaseAtTime(time, quantum);
   const auto cycle = beats / quantum;
   const double cps = (timeline.tempo() / quantum) / 60;
@@ -94,13 +94,14 @@ struct State
   ableton::Link link;
   double quantum;
   double latency = 0.4;
+  long int beatOffset = 0;
   State()
     : running(true)
       , link(120.)
   {
     link.enable(true);
     link.setTempoCallback([this](const double bpm) {
-	sendTempo(std::ref(link), quantum, latency);
+	sendTempo(std::ref(link), quantum, latency, beatOffset);
     });
 
     quantum=4;
@@ -151,7 +152,7 @@ void printState(const std::chrono::microseconds time,
 {
   const auto beats = timeline.beatAtTime(time, quantum);
   const auto phase = timeline.phaseAtTime(time, quantum);
-  const auto cycle = beats / quantum;
+  const auto cycle = (beats - state.beatOffset) / quantum;
   const double cps = (timeline.tempo() / quantum) / 60;
   const auto t     = std::chrono::microseconds(time).count();
   static long diff = 0;
@@ -172,10 +173,10 @@ void printState(const std::chrono::microseconds time,
 
   std::cout << std::defaultfloat << "peers: " << numPeers << " | "
             << "quantum: " << quantum << " | "
-            << "tempo: " << timeline.tempo() << " | " << std::fixed << "beats: " << beats
-            << " | sec: " << sec
-            << " | usec: " << usec
-            << " | lat: " << state.latency;
+            << "tempo: " << timeline.tempo() << " | " << std::fixed << "beats: " << (beats - state.beatOffset)
+    //<< " | sec: " << sec
+    //      << " | usec: " << usec
+            << " | lat: " << state.latency << " | ";
   for (int i = 0; i < ceil(quantum); ++i)
   {
     if (i < phase)
@@ -262,7 +263,7 @@ void oscRecvHandler(char* packet, int packetSize, void* data) {
       state->latency = (arg++)->AsFloat();
       if(arg != message->ArgumentsEnd())
         throw osc::ExcessArgumentException();
-      sendTempo(std::ref(state->link), state->quantum, state->latency);
+      sendTempo(std::ref(state->link), state->quantum, state->latency, state->beatOffset);
     }
     if(std::strcmp(message->AddressPattern(), "/nudge") == 0) {
       auto timeLine = state->link.captureAppTimeline();
@@ -272,14 +273,27 @@ void oscRecvHandler(char* packet, int packetSize, void* data) {
       state->latency += (arg++)->AsFloat();
       if(arg != message->ArgumentsEnd())
         throw osc::ExcessArgumentException();
-      sendTempo(std::ref(state->link), state->quantum, state->latency);
+      sendTempo(std::ref(state->link), state->quantum, state->latency, state->beatOffset);
       std::cout << "\n\n" << "got nudge, latency now set to " << state->latency << "\n\n";
+    }
+    if(std::strcmp(message->AddressPattern(), "/resetbeat") == 0) {
+      auto timeLine = state->link.captureAppTimeline();
+      const auto tempo = timeLine.tempo();
+      auto beats = timeLine.beatAtTime(time, state->quantum);
+      
+      osc::ReceivedMessage::const_iterator arg = message->ArgumentsBegin();
+      state->beatOffset = floor(beats+0.5);
+      state->beatOffset -= (arg++)->AsInt32();
+      if(arg != message->ArgumentsEnd())
+        throw osc::ExcessArgumentException();
+      sendTempo(std::ref(state->link), state->quantum, state->latency, state->beatOffset);
+      std::cout << "\n\ngot resetbeat\n\n";
     }
     if(std::strcmp(message->AddressPattern(), "/ping") == 0) {
       auto timeLine = state->link.captureAppTimeline();
       const auto tempo = timeLine.tempo();
       // --- //
-      sendTempo(std::ref(state->link), state->quantum, state->latency);
+      sendTempo(std::ref(state->link), state->quantum, state->latency, state->beatOffset);
     }
   }
 }
