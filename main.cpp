@@ -37,7 +37,7 @@
 #endif
 
 // #define NTP_UT_EPOCH_DIFF ((70 * 365 + 17) * 24 * 60 * 60)
-#define OUTPUT_BUFFER_SIZE 1024
+int OUTPUT_BUFFER_SIZE = 1024  // change style of variable name?
 
 // referencing this to make sure everything is working properly
 osc::OutboundPacketStream* stream;
@@ -303,8 +303,11 @@ void oscRecvThreadFunc(State& state) {
   oscRecvThreadFunc(state);
 }
 
-int main(int, char**)
+int main(int argc, char **argv)
 {
+  // #TODO add check for flags
+  // #TODO add case for output buffer size flag
+  // #TODO add case for latency flag
   sender = new UdpSender("127.0.0.1", 6043, OUTPUT_BUFFER_SIZE);
   receiver = new UdpReceiver(6042, OUTPUT_BUFFER_SIZE);
   State state;
