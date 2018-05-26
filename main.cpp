@@ -37,7 +37,7 @@
 #endif
 
 // #define NTP_UT_EPOCH_DIFF ((70 * 365 + 17) * 24 * 60 * 60)
-int OUTPUT_BUFFER_SIZE = 1024  // change style of variable name?
+int OUTPUT_BUFFER_SIZE = 1024;  // change style of variable name?
 
 // referencing this to make sure everything is working properly
 osc::OutboundPacketStream* stream;
