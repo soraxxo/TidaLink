@@ -233,16 +233,20 @@ void input(State& state)
       return;
     case 'w':
       //clearLine();
-      timeLine.setTempo(tempo-1,updateAt);  //TODO tempo boundaries 20-999 bpm
+      if (tempo > 20) {
+        timeLine.setTempo(tempo-1,updateAt);
+      }
       break;
     case 'e':
       //clearLine();
-      timeLine.setTempo(tempo+1,updateAt);  //TODO tempo boundaries
+      if (tempo < 999) {
+        timeLine.setTempo(tempo+1,updateAt);
+      }
       break;
     case 'r':
       //clearLine();
       if (state.quantum > 1) {
-         state.quantum -= 1;
+        state.quantum -= 1;
       }
       break;
     case 't':
