@@ -54,6 +54,30 @@ public:
 UdpSender* sender;
 UdpReceiver* receiver;
 
+void printHelp()
+{
+  std::cout << std::endl << " < T I D A L I N K >" << std::endl << std::endl;
+  std::cout << "usage:" << std::endl;
+  // Spacebar does not appear to be implemented
+  // std::cout << "  start / stop: space" << std::endl;
+  std::cout << "  decrease / increase tempo: w / e" << std::endl;
+  std::cout << "  decrease / increase quantum: r / t" << std::endl;
+  std::cout << "  quit: q" << std::endl << std::endl;
+}
+
+void clear() {
+    // CSI[2J clears screen, CSI[H moves the cursor to top-left corner
+    //std::cout << "\x1B[2J\x1B[H";
+    // \033c cleans the screen -- seems to be working better
+    std::cout << "\033c";
+}
+
+void clearLine()
+{
+  std::cout << "   \r" << std::flush;
+  std::cout.fill(' ');
+}
+
 void sendTempo(ableton::Link& link, double quantum, double latency, long int beatOffset) {
   auto timeline = link.captureAppTimeline();
   const auto time = link.clock().micros();
@@ -78,7 +102,9 @@ void sendTempo(ableton::Link& link, double quantum, double latency, long int bea
   int sec = floor(timetag_ut);
   int usec = floor(1000000 * (timetag_ut - sec));
   osc::OutboundPacketStream p( buffer, OUTPUT_BUFFER_SIZE );
-  std::cout << "\nnew cps: " << cps << " | last cps: " << last_cps << "\n";
+  clear();
+  printHelp();
+  std::cout << "current cps: " << cps << " | last cps: " << last_cps << "\n";
   last_cps = cps;
   p << osc::BeginMessage( "/tempo" )
     << sec << usec
@@ -128,22 +154,6 @@ void enableBufferedInput()
 #endif
 }
 
-void clearLine()
-{
-  std::cout << "   \r" << std::flush;
-  std::cout.fill(' ');
-}
-
-void printHelp()
-{
-  std::cout << std::endl << " < T I D A L I N K >" << std::endl << std::endl;
-  std::cout << "usage:" << std::endl;
-  std::cout << "  start / stop: space" << std::endl;
-  std::cout << "  decrease / increase tempo: w / e" << std::endl;
-  std::cout << "  decrease / increase quantum: r / t" << std::endl;
-  std::cout << "  quit: q" << std::endl << std::endl;
-}
-
 void printState(const std::chrono::microseconds time,
     const ableton::Link::Timeline timeline,
     const std::size_t numPeers,
@@ -171,9 +181,11 @@ void printState(const std::chrono::microseconds time,
   int sec = floor(timetag_ut);
   int usec = floor(1000000 * (timetag_ut - sec));
 
-  std::cout << std::defaultfloat << "peers: " << numPeers << " | "
-            << "quantum: " << quantum << " | "
-            << "tempo: " << timeline.tempo() << " | " << std::fixed << "beats: " << (beats - state.beatOffset)
+  clearLine();
+  std::cout << std::defaultfloat << "peers: " << numPeers 
+            << " | " << "quantum: " << quantum 
+            << " | " << "tempo: " << timeline.tempo()
+    //<< " | " << std::fixed << "beats: " << (beats - state.beatOffset)
     //<< " | sec: " << sec
     //      << " | usec: " << usec
             << " | lat: " << state.latency << " | ";
@@ -188,7 +200,6 @@ void printState(const std::chrono::microseconds time,
       std::cout << 'O';
     }
   }
-  clearLine();
 }
 
 void input(State& state)
@@ -216,20 +227,29 @@ void input(State& state)
   {
     case 'q':
       state.running = false;
-      clearLine();
+      //clearLine();
+      std::cout << "\n";
+      std::cout << "\n";  //remove?
       return;
     case 'w':
-      timeLine.setTempo(tempo-1,updateAt);
+      //clearLine();
+      timeLine.setTempo(tempo-1,updateAt);  //TODO tempo boundaries 20-999 bpm
       break;
     case 'e':
-      timeLine.setTempo(tempo+1,updateAt);
+      //clearLine();
+      timeLine.setTempo(tempo+1,updateAt);  //TODO tempo boundaries
       break;
     case 'r':
-      state.quantum -= 1;
+      //clearLine();
+      if (state.quantum > 1) {
+         state.quantum -= 1;
+      }
       break;
     case 't':
+      //clearLine();
       state.quantum += 1;
       break;
+    // default:
   }
   state.link.commitAppTimeline(timeLine);
   input(state);
@@ -311,6 +331,7 @@ int main(int argc, char **argv)
   sender = new UdpSender("127.0.0.1", 6043, OUTPUT_BUFFER_SIZE);
   receiver = new UdpReceiver(6042, OUTPUT_BUFFER_SIZE);
   State state;
+  clear();
   printHelp();
   std::thread thread(input, std::ref(state));
   std::thread oscRecvThread(oscRecvThreadFunc, std::ref(state));
