@@ -119,7 +119,7 @@ struct State
   std::atomic<bool> running;
   ableton::Link link;
   double quantum;
-  double latency = 0.4;
+  double latency = 0.145;  //originally 0.4
   long int beatOffset = 0;
   State()
     : running(true)
